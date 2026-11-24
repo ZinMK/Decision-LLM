@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision-LLM</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66;
+    --line: #e4e4df; --accent: #c2410c; --accent-soft: #fde7da;
+    --bar: #d6d3cc; --bar-hit: #c2410c; --good: #15803d; --bad: #b91c1c;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9890;
+      --line: #33322e; --accent: #fb923c; --accent-soft: #3b2417;
+      --bar: #3d3c38; --bar-hit: #fb923c; --good: #4ade80; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 2px 0 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  form { display: grid; gap: 12px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=text] { flex: 1 1 320px; font: inherit; padding: 10px 12px; border-radius: 8px;
+         border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  label { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; }
+  select, input[type=number] { font: inherit; font-size: 13px; padding: 5px 6px; border-radius: 6px;
+         border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  input[type=number] { width: 64px; }
+  button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: 0; cursor: pointer; }
+  .go { background: var(--accent); color: #fff; }
+  .stop { background: var(--line); color: var(--text); }
+  button:disabled { opacity: .45; cursor: default; }
+  .examples { display: flex; gap: 6px; flex-wrap: wrap; }
+  .examples button { font-weight: 400; font-size: 13px; padding: 4px 10px; background: transparent;
+         border: 1px solid var(--line); color: var(--muted); }
+  .examples button:hover { color: var(--text); border-color: var(--muted); }
+
+  .answer { margin-top: 16px; min-height: 92px; }
+  .answer-text { font-size: 20px; line-height: 1.9; }
+  .tok { padding: 2px 4px; border-radius: 5px; cursor: pointer; }
+  .tok:hover { background: var(--accent-soft); }
+  .tok.sel { background: var(--accent); color: #fff; }
+  .tok.punct { padding-left: 0; }
+  .cursor { display: inline-block; width: 9px; height: 20px; background: var(--accent);
+            vertical-align: -3px; margin-left: 4px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .status { color: var(--muted); font-size: 13px; margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .status b { color: var(--text); font-weight: 600; }
+  .error { color: var(--bad); }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+  .bars { display: grid; gap: 6px; }
+  .bar { display: grid; grid-template-columns: 92px 1fr 44px; gap: 8px; align-items: center; font-size: 13px; }
+  .bar .k { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .track { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--bar); border-radius: 4px; }
+  .bar.hit .fill { background: var(--bar-hit); }
+  .bar.hit .k { color: var(--accent); font-weight: 600; }
+  .bar .p { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .empty { color: var(--muted); font-size: 13px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--accent-soft); }
+  tbody tr.sel { background: var(--accent-soft); }
+  .log { margin-top: 16px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Decision-LLM</h1>
+  <p class="sub">Jev picks every word: first letter, then a tournament over dictionary words.</p>
+
+  <section class="panel">
+    <form id="form">
+      <div class="row">
+        <input id="q" type="text" placeholder="Ask a question…" autocomplete="off" autofocus>
+        <button class="go" id="go" type="submit">Generate</button>
+        <button class="stop" id="stop" type="button" disabled>Stop</button>
+      </div>
+      <div class="row">
+        <label>Max words <input id="max" type="number" min="1" max="60" value="20"></label>
+        <label>Dictionary
+          <select id="vocab">
+            <option value="10000">10k words</option>
+            <option value="20000" selected>20k words</option>
+            <option value="50000">48k words</option>
+          </select>
+        </label>
+        <div class="examples" id="examples"></div>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel answer">
+    <h2>Answer</h2>
+    <div class="answer-text" id="answer"><span class="empty">The answer appears here, one word at a time. Click a word to see how Jev chose it.</span></div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="grid">
+    <div class="panel"><h2>What comes next</h2><div class="bars" id="b-next"><span class="empty">—</span></div></div>
+    <div class="panel"><h2>First letter</h2><div class="bars" id="b-letter"><span class="empty">—</span></div><div class="note" id="n-letter"></div></div>
+    <div class="panel"><h2>Final round</h2><div class="bars" id="b-final"><span class="empty">—</span></div><div class="note" id="n-final"></div></div>
+  </section>
+
+  <section class="panel log">
+    <h2>Decision log</h2>
+    <table>
+      <thead><tr><th>#</th><th>Picked</th><th>First letter</th><th>Letters tried</th>
+        <th class="num">Words in tournament</th><th class="num">Calls</th><th class="num">Seconds</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const EXAMPLES = ["What is the capital of France?", "Why is the sky blue?",
+                  "What do bees make?", "How many legs does a spider have?"];
+let source = null, steps = [], selected = -1, started = 0, timer = null;
+
+for (const ex of EXAMPLES) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = ex;
+  b.onclick = () => { $("q").value = ex; start(); };
+  $("examples").appendChild(b);
+}
+
+$("form").onsubmit = (e) => { e.preventDefault(); start(); };
+$("stop").onclick = () => finish("Stopped.");
+
+function start() {
+  const q = $("q").value.trim();
+  if (!q) return $("q").focus();
+  if (source) source.close();
+  steps = []; selected = -1;
+  $("log").innerHTML = "";
+  renderAnswer(true); renderDetail();
+  $("go").disabled = true; $("stop").disabled = false;
+  started = Date.now();
+  tick(); timer = setInterval(tick, 200);
+
+  const params = new URLSearchParams({ q, max_words: $("max").value, vocab: $("vocab").value });
+  source = new EventSource("/generate?" + params);
+  source.addEventListener("word", (e) => {
+    const s = JSON.parse(e.data);
+    steps.push(s);
+    if (s.token !== "<end>") { selected = steps.length - 1; }
+    addLogRow(s);
+    renderAnswer(true); renderDetail();
+  });
+  source.addEventListener("done", (e) => {
+    const d = JSON.parse(e.data);
+    finish(`<b>${d.calls}</b> Jev calls · <b>${d.seconds}s</b> · <b>${d.input_tokens.toLocaleString()}</b> input tokens` +
+           (d.mock ? " · <b>mock Jev</b>" : ""));
+  });
+  source.addEventListener("failed", (e) => finish(`<span class="error">${escapeHtml(JSON.parse(e.data).message)}</span>`));
+  source.onerror = () => { if (source) finish('<span class="error">Connection lost. Is server.py running?</span>'); };
+}
+
+function finish(html) {
+  if (source) { source.close(); source = null; }
+  clearInterval(timer);
+  $("go").disabled = false; $("stop").disabled = true;
+  renderAnswer(false);
+  $("status").innerHTML = html;
+}
+
+function tick() {
+  const words = steps.filter((s) => s.token !== "<end>").length;
+  const secs = ((Date.now() - started) / 1000).toFixed(1);
+  const calls = steps.reduce((a, s) => a + s.calls, 0);
+  $("status").innerHTML = `Jev is choosing word <b>${words + 1}</b>… · ${secs}s · ${calls} calls so far`;
+}
+
+function renderAnswer(running) {
+  const el = $("answer");
+  el.innerHTML = "";
+  steps.forEach((s, i) => {
+    if (s.token === "<end>") return;
+    const punct = /^[.,?!]$/.test(s.token);
+    if (i > 0 && !punct) el.appendChild(document.createTextNode(" "));
+    const span = document.createElement("span");
+    span.className = "tok" + (punct ? " punct" : "") + (i === selected ? " sel" : "");
+    span.textContent = s.token;
+    span.onclick = () => select(i);
+    el.appendChild(span);
+  });
+  if (running) {
+    const c = document.createElement("span"); c.className = "cursor"; el.appendChild(c);
+  }
+}
+
+function select(i) {
+  selected = i;
+  renderAnswer(!!source); renderDetail();
+  document.querySelectorAll("#log tr").forEach((tr, j) => tr.classList.toggle("sel", j === i));
+}
+
+function bars(el, rows, hits) {
+  el.innerHTML = "";
+  if (!rows || !rows.length) { el.innerHTML = '<span class="empty">—</span>'; return; }
+  for (const [k, p] of rows) {
+    const row = document.createElement("div");
+    row.className = "bar" + (hits.includes(k) ? " hit" : "");
+    row.innerHTML = `<span class="k"></span><span class="track"><span class="fill" style="width:${(p * 100).toFixed(1)}%"></span></span><span class="p">${(p * 100).toFixed(0)}%</span>`;
+    row.querySelector(".k").textContent = k;
+    el.appendChild(row);
+  }
+}
+
+function renderDetail() {
+  const s = steps[selected];
+  if (!s) {
+    for (const id of ["b-next", "b-letter", "b-final"]) $(id).innerHTML = '<span class="empty">—</span>';
+    $("n-letter").textContent = $("n-final").textContent = "";
+    return;
+  }
+  const kind = s.next[0] ? s.next[0][0] : "word";
+  bars($("b-next"), s.next, [kind]);
+  bars($("b-letter"), s.letters, s.tried);
+  $("n-letter").textContent = s.tried.length ? `Tried: ${s.tried.join(", ")}` : "No word this step.";
+  bars($("b-final"), s.final, [s.token]);
+  $("n-final").textContent = s.candidates
+    ? `${s.candidates.toLocaleString()} words entered · ${s.calls} calls · ${s.seconds}s`
+    : `${s.calls} call · ${s.seconds}s`;
+}
+
+function addLogRow(s) {
+  const i = steps.length - 1;
+  const tr = document.createElement("tr");
+  const letter = s.letters[0] ? `${s.letters[0][0]} (${(s.letters[0][1] * 100).toFixed(0)}%)` : "";
+  const cells = [i + 1, s.token, s.candidates ? letter : "—", s.tried.join(", ") || "—",
+                 s.candidates ? s.candidates.toLocaleString() : "—", s.calls, s.seconds.toFixed(1)];
+  cells.forEach((c, j) => {
+    const td = document.createElement("td");
+    td.textContent = c;
+    if (j >= 4) td.className = "num";
+    tr.appendChild(td);
+  });
+  tr.onclick = () => select(i);
+  $("log").appendChild(tr);
+}
+
+function escapeHtml(t) {
+  return t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+</script>
+</body>
+</html>

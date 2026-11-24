@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision Model Chat Bot</title>
+<style>
+  :root {
+    --bg: #ffffff; --text: #111113; --muted: #6e6e76; --faint: #a4a4ab;
+    --line: #ececee; --soft: #f4f4f5; --accent: #2563eb; --accent-soft: #e8efff;
+    --good: #16a34a; --bad: #dc2626;
+    --jev: #111113; --clef: #f38020;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 var(--sans);
+         -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+
+  header { padding: 18px 16px 14px; text-align: center; border-bottom: 1px solid var(--line); flex: none; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+  header p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+
+  #chat { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+  .thread { max-width: 1040px; margin: 0 auto; padding: 32px 16px 24px; }
+
+  .welcome { text-align: center; padding: 12vh 0 0; }
+  .welcome h2 { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 24px; }
+  .welcome p { color: var(--muted); margin: 0 auto 28px; max-width: 480px; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .examples button { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 999px;
+                     border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; }
+  .examples button:hover { background: var(--soft); }
+
+  .user { display: flex; justify-content: flex-end; margin: 0 0 22px; }
+  .user div { background: var(--soft); padding: 10px 16px; border-radius: 20px 20px 6px 20px;
+              font-size: 17px; max-width: 80%; }
+
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 0 0 40px; }
+  .bot { border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px 18px; min-width: 0; }
+  .who { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .logo { flex: none; height: 28px; width: auto; display: block; }
+  .logo.square { width: 28px; border-radius: 7px; }
+  .logo:not(.square) { height: 20px; margin: 4px 0; }
+  .who b { font-size: 15px; font-weight: 650; }
+  .who span { font-size: 13px; color: var(--muted); }
+  .text { font-size: 20px; line-height: 1.55; letter-spacing: -0.005em; min-height: 31px;
+          white-space: pre-wrap; word-break: break-word; }
+  .text .tentative { color: var(--faint); }
+  .cursor { display: inline-block; width: 2px; height: 22px; background: var(--accent); margin-left: 2px;
+            vertical-align: -4px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Live view of the decision the model just made */
+  .live { margin-top: 14px; background: var(--soft); border-radius: 12px; padding: 11px 13px; }
+  .live .what { font-size: 14px; color: var(--muted); margin-bottom: 8px; white-space: nowrap;
+                overflow: hidden; text-overflow: ellipsis; }
+  .live .what b { color: var(--text); font-weight: 600; }
+  .opts { display: grid; gap: 6px; }
+  .opt { display: grid; grid-template-columns: minmax(60px, 120px) 1fr 40px; gap: 10px; align-items: center; font-size: 14px; }
+  .opt .k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  .opt .track { display: block; height: 6px; background: #e4e4e7; border-radius: 3px; overflow: hidden; }
+  .opt .fill { display: block; height: 100%; background: #c4c4c9; border-radius: 3px; transition: width .2s ease; }
+  .opt .p { text-align: right; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .opt.top .k { color: var(--text); font-weight: 600; }
+  .opt.top .fill { background: var(--accent); }
+  .opt.top .p { color: var(--text); }
+
+  .meta { margin-top: 12px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+  .meta .ok { color: var(--good); font-weight: 600; }
+  .meta .warn { color: var(--bad); font-weight: 600; }
+  .meta button { font: inherit; font-size: 13px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+
+  .breakdown { margin-top: 12px; border-top: 1px solid var(--line); }
+  .row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: 0; }
+  .row .w { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .row .w small { display: block; font-weight: 400; color: var(--faint); font-size: 12px; }
+  .row .alts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .pill { padding: 2px 9px; border-radius: 999px; background: var(--soft); color: var(--muted); font-size: 13px; }
+  .pill.top { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  .composer { flex: none; padding: 12px 16px 22px; background: linear-gradient(transparent, var(--bg) 30%); }
+  form { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; align-items: center;
+         border: 1px solid var(--line); border-radius: 999px; padding: 6px 6px 6px 20px;
+         box-shadow: 0 4px 24px rgba(0, 0, 0, .06); background: var(--bg); }
+  input { flex: 1; min-width: 0; border: 0; outline: 0; font: inherit; font-size: 17px; background: transparent; color: var(--text); }
+  input::placeholder { color: var(--faint); }
+  .send { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer;
+          background: var(--text); color: #fff; display: grid; place-items: center; }
+  .send:disabled { background: #d4d4d8; cursor: default; }
+  .send svg { width: 18px; height: 18px; }
+  .hint { text-align: center; font-size: 12px; color: var(--faint); margin-top: 8px; }
+
+  @media (max-width: 760px) {
+    .pair { grid-template-columns: 1fr; }
+    .text { font-size: 18px; }
+    .row { grid-template-columns: 96px 1fr; }
+    .welcome h2 { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Decision Model Chat Bot</h1>
+  <p>One question, two decision models. Every word is chosen by the model. No text generator.</p>
+</header>
+
+<div id="chat"><div class="thread" id="thread">
+</div></div>
+
+<div class="composer">
+  <form id="form" autocomplete="off">
+    <input id="q" type="text" placeholder="Ask a question or make a request" autofocus>
+    <button class="send" id="send" type="submit" aria-label="Send" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const MODELS = [
+  { id: "jev", name: "Jev", by: "TypeSafe", logo: "data:image/png;base64,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", square: true },
+  { id: "clef", name: "Clef Omni", by: "Cloudflare", logo: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzNDEgMTU2IiBmaWxsPSJub25lIj4KICA8dGl0bGU+Q2xvdWRmbGFyZSBsb2dvPC90aXRsZT4KICA8cGF0aAogICAgZD0iTTI3NS4xMjUgNjguMjVDMzExLjUwNyA2OC4yNSAzNDEgOTcuOTMzNSAzNDEgMTM0LjU1QzM0MSAxNDEuMDc3IDM0MC4wNjMgMTQ3LjM4NSAzMzguMzE3IDE1My4zNDNDMzM3Ljg0OCAxNTQuOTQzIDMzNi4zNjMgMTU2IDMzNC43MDYgMTU2SDI0My4wNTZDMjQxLjY5NyAxNTYgMjQwLjc2IDE1NC42MjggMjQxLjI0NyAxNTMuMzUxTDI0Mi45OTkgMTQ4Ljc2QzI0OC41OTUgMTM0LjAzIDI2NC41NiAxMjEuOTYzIDI3OS4zMzEgMTIxLjI1NkwzMDcuMzMgMTE5LjgxM0MzMDguODI2IDExOS43MzYgMzEwIDExOC40OTIgMzEwIDExNi45ODVDMzEwIDExNS40ODUgMzA4LjgzOCAxMTQuMjQ1IDMwNy4zNTEgMTE0LjE1N0wyODEuMDU5IDExMi42MDFDMjY2LjkyNCAxMTEuODc3IDI2MC4wMTggOTkuMjkzMiAyNjMuODIgODYuMTc5TDI2OC4xOTUgNzEuMDg2NkMyNjguNjQgNjkuNTUxNCAyNjkuOTcxIDY4LjQzNDMgMjcxLjU1NyA2OC4zNDc2QzI3Mi43MzggNjguMjgzMSAyNzMuOTI4IDY4LjI1IDI3NS4xMjUgNjguMjVaIgogICAgZmlsbD0iI0ZBQUU0MCIKICAvPgogIDxwYXRoCiAgICBkPSJNMTg0LjA2MiAwQzIyMiAwIDI1My44NjggMjYuMTI5NyAyNjIuODgyIDYxLjQ4MjRDMjYzLjI2IDYyLjk2NyAyNjMuMTQyIDY0LjUzMzMgMjYyLjYwMSA2NS45NjYyTDI1NS4zODMgODUuMDg5N0MyNDkuNzg3IDk5LjgxOTYgMjM1LjQwNiAxMTIuNTkzIDIxOS4xMzQgMTEyLjU5M0w5My43OTI4IDExNC4wNDNDOTIuMjgwMSAxMTQuMDYxIDkxLjA2MyAxMTUuMyA5MS4wNjI1IDExNi44MjNDOTEuMDYyNSAxMTguMzQ0IDkyLjI3NzYgMTE5LjU4NSA5My43ODkgMTE5LjYwNUwyMTcuMzY1IDEyMS4yNDhDMjMxLjUzMSAxMjEuMjQ4IDIzOC40MDYgMTM0LjU1NiAyMzQuNjA2IDE0Ny42NzFMMjMzLjAxMSAxNTMuMTg5QzIzMi41MyAxNTQuODU1IDIzMS4wMTQgMTU2IDIyOS4yOTEgMTU2SDMuOTA4ODlDMS45ODA3NSAxNTYgMC4zMzA3NDUgMTU0LjU3NCAwLjE3NjM0IDE1Mi42NEMwLjA1OTQ1NTUgMTUxLjE3NSAwIDE0OS42OTUgMCAxNDguMkMwIDExOS43MjMgMjEuNjYxNyA5Ni4zNDAzIDQ5LjMwNiA5My44MjY2QzQ4LjczODcgOTEuMjQxOSA0OC40Mzc1IDg4LjU1NjQgNDguNDM3NSA4NS44QzQ4LjQzNzUgNjUuMzM3OSA2NC45MTkgNDguNzUgODUuMjUgNDguNzVDOTMuMzQxMyA0OC43NSAxMDAuODIyIDUxLjM3ODkgMTA2Ljg5NyA1NS44MzIxQzExNy43MTYgMjMuMzgwNiAxNDguMTc2IDAgMTg0LjA2MiAwWiIKICAgIGZpbGw9IiNGMzgwMjAiCiAgLz4KPC9zdmc+Cg==" },
+];
+const SEND = $("send").innerHTML;
+const STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+let runs = [];  // the answers currently streaming
+
+const busy = () => runs.some((r) => r.source);
+$("q").oninput = () => { if (!busy()) $("send").disabled = !$("q").value.trim(); };
+$("form").onsubmit = (e) => {
+  e.preventDefault();
+  if (busy()) runs.forEach((r) => r.source && finish(r, "", "Stopped."));
+  else ask();
+};
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function ask() {
+  const question = $("q").value.trim();
+  if (!question || busy()) return;
+  $("welcome")?.remove();
+  $("q").value = "";
+
+  const user = el("div", "user"); user.appendChild(el("div", "", question));
+  const pair = el("div", "pair");
+  $("thread").append(user, pair);
+  runs = MODELS.map((model) => start(model, question, pair));
+  $("send").innerHTML = STOP; $("send").disabled = false; $("send").setAttribute("aria-label", "Stop");
+  scrollDown();
+}
+
+function start(model, question, pair) {
+  const bot = el("div", "bot");
+  const who = el("div", "who");
+  const logo = el("img", model.square ? "logo square" : "logo");
+  logo.src = model.logo; logo.alt = model.by;
+  who.append(logo, el("b", "", model.name));
+  const text = el("div", "text"), live = el("div", "live"), meta = el("div", "meta");
+  live.append(el("div", "what", "Thinking about the first word…"), el("div", "opts"));
+  bot.append(who, text, live, meta);
+  pair.appendChild(bot);
+
+  const r = { model, steps: [], text, live, meta, bot, source: null };
+  renderText(r, true);
+  r.source = new EventSource("/generate?" + new URLSearchParams({ q: question, model: model.id }));
+  r.source.addEventListener("step", (e) => {
+    const s = JSON.parse(e.data);
+    r.steps.push(s);
+    renderText(r, true);
+    renderLive(r, s);
+    scrollDown();
+  });
+  r.source.addEventListener("done", (e) => {
+    const d = JSON.parse(e.data);
+    const head = d.complete ? `<span class="ok">✓ Answer complete</span>` : `<span class="warn">Stopped before finishing</span>`;
+    finish(r, `${head}<span>${d.calls} decisions</span><span>${d.seconds}s</span>`);
+  });
+  r.source.addEventListener("failed", (e) => finish(r, "", JSON.parse(e.data).message));
+  r.source.onerror = () => { if (r.source) finish(r, "", "Connection lost. Is server.py running?"); };
+  return r;
+}
+
+function finish(r, html, message) {
+  if (r.source) { r.source.close(); r.source = null; }
+  renderText(r, false);
+  if (!r.steps.length) r.text.remove();
+  r.live.remove();
+  r.meta.innerHTML = html;
+  if (message) r.meta.prepend(el("span", "warn", message));
+  if (wordRows(r).length) {
+    const b = el("button", "", "How it chose each word");
+    b.type = "button";
+    b.onclick = () => toggleBreakdown(r, b);
+    r.meta.appendChild(b);
+  }
+  if (!busy()) {
+    $("send").innerHTML = SEND; $("send").setAttribute("aria-label", "Send");
+    $("send").disabled = !$("q").value.trim();
+    $("q").focus();
+  }
+  scrollDown();
+}
+
+// Locked progress in normal text; letters the model may still delete are lighter.
+function renderText(r, running) {
+  const s = r.steps[r.steps.length - 1];
+  r.text.innerHTML = "";
+  if (s) {
+    const locked = running ? s.locked : s.answer.length;
+    r.text.append(document.createTextNode(s.answer.slice(0, locked)), el("span", "tentative", s.answer.slice(locked)));
+  }
+  if (running) r.text.appendChild(el("span", "cursor"));
+}
+
+const LABEL = { finished: "word is done", backspace: "delete a letter", end: "end the sentence",
+                none_fit: "no word fits", delete_word: "delete the word" };
+const label = (k) => LABEL[k] || k;
+
+function renderLive(r, s) {
+  const word = (s.answer.trimEnd().split(" ").pop() || "").replace(/\.$/, "");
+  let html;
+  if (s.key === "pick") html = `Typed <b>“${esc(s.typed)}”</b> → picked <b>“${esc(s.target)}”</b> from ${s.pool.toLocaleString()} words`;
+  else if (s.key === "space") html = `<b>“${esc(word)}”</b> fits. On to the next word`;
+  else if (s.key === "delete_word") html = `Took a word back: it didn't fit`;
+  else if (s.key === "backspace") html = `Deleted a letter`;
+  else if (s.key === "done") html = `<b>The sentence is complete</b>`;
+  else if (s.target && word === s.target) html = `Checking <b>“${esc(word)}”</b>`;
+  else html = `Typing the next letter`;
+  r.live.querySelector(".what").innerHTML = html;
+
+  const opts = r.live.querySelector(".opts");
+  opts.innerHTML = "";
+  const chosen = s.key === "pick" ? s.target : s.key === "space" ? "finished" : s.key === "done" ? "end" : s.key;
+  for (const [k, p] of s.letters.slice(0, 3)) {
+    const row = el("div", "opt" + (k === chosen ? " top" : ""));
+    const track = el("span", "track"), fill = el("span", "fill");
+    fill.style.width = `${(p * 100).toFixed(1)}%`;
+    track.appendChild(fill);
+    row.append(el("span", "k", label(k)), track, el("span", "p", `${Math.round(p * 100)}%`));
+    opts.appendChild(row);
+  }
+}
+
+// One row per word of the final answer: the word pick that produced it.
+function wordRows(r) {
+  const last = r.steps[r.steps.length - 1];
+  if (!last) return [];
+  const picks = new Map();  // word start position -> last pick step there
+  let endStep = null;
+  for (const s of r.steps) {
+    if (s.key === "pick") picks.set(s.answer.lastIndexOf(" ") + 1, s);
+    if (s.key === "done" && s.letters.some(([k]) => k === "end")) endStep = s;
+  }
+  const rows = [];
+  for (const m of last.answer.matchAll(/[A-Za-z]+/g)) {
+    const s = picks.get(m.index);
+    if (s) rows.push({ word: m[0], step: s });
+  }
+  if (endStep) rows.push({ word: "(end)", step: endStep, end: true });
+  return rows;
+}
+
+function toggleBreakdown(r, button) {
+  const open = r.bot.querySelector(".breakdown");
+  if (open) { open.remove(); button.textContent = "How it chose each word"; return; }
+  const box = el("div", "breakdown");
+  for (const row of wordRows(r)) {
+    const line = el("div", "row");
+    const w = el("div", "w", row.word);
+    if (row.step.pool) w.appendChild(el("small", "", `typed “${row.step.typed}” · from ${row.step.pool.toLocaleString()} words`));
+    const alts = el("div", "alts");
+    for (const [k, p] of row.step.letters.slice(0, 4)) {
+      const top = row.end ? k === "end" : k === row.step.target;
+      alts.appendChild(el("span", "pill" + (top ? " top" : ""), `${label(k)} ${Math.round(p * 100)}%`));
+    }
+    line.append(w, alts);
+    box.appendChild(line);
+  }
+  r.bot.appendChild(box);
+  button.textContent = "Hide";
+}
+
+// Open /?q=Your+question to ask straight away (handy for recording).
+const preset = new URLSearchParams(location.search).get("q");
+if (preset) { $("q").value = preset; ask(); }
+
+function scrollDown() { $("chat").scrollTop = $("chat").scrollHeight; }
+function esc(t) { return String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+</script>
+</body>
+</html>
